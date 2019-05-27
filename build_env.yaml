@@ -1,0 +1,122 @@
+---
+- name: Get and prep the base image
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  tasks:
+    - name: Check if the file exists first.
+      stat:
+        path: '{{ image_pool_loc }}/{{ image_name }}'
+      register: stat_result
+    - name: Download the base image
+      get_url:
+        url: '{{ image_url }}'
+        dest: '{{ image_pool_loc }}/'
+        timeout: 3600
+      when: stat_result.stat.exists == False
+    - name: Unarchive the base image
+      unarchive:
+        src: '{{ image_pool_loc }}/{{ image_name }}.gz'
+        dest: '{{ image_pool_loc }}/{{ image_name }}'
+      when: stat_result.stat.exists == False and gunzip_image
+    - name: Get the disk image size
+      shell: qemu-img info /var/lib/libvirt/images/fedora-coreos-30.84-qemu.qcow2 | awk '/virtual size/{print $3}'
+      register: qemu_img_info_result
+    - name: Resize the base image
+      shell: qemu-img resize {{ image_pool_loc }}/{{ image_name }} {{ base_image_disk_size }}
+      when: base_image_disk_size != qemu_img_info_result.stdout
+
+- name: Generate ignition files
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  tasks:
+    - name: Generate the ssh key
+      shell: ssh-keygen -f {{ key_file }} -N ''
+      args:
+        creates: '{{ key_file }}'
+    - name: Register the pub key contents for use
+      shell: cat '{{ key_file }}'.pub
+      register: ssh_pub_key
+    - name: Build ignition files for nodes
+      copy:
+        dest: '{{ item.ignition_file }}'
+        content: |
+          {
+            "ignition": { "version": "3.0.0" },
+            "passwd": {
+              "users": [
+                {
+                  "name": "core",
+                  "sshAuthorizedKeys": [
+                    "{{ ssh_pub_key.stdout }}"
+                  ]
+                }
+              ]
+            },
+            "storage": {
+              "files": [
+                {
+                  "filesystem": "root",
+                  "group": {},
+                  "path": "/etc/hostname",
+                  "user": {},
+                  "overwrite": true,
+                  "contents": {
+                    "source": "data:,{{ item.name }}",
+                    "verification": {}
+                  },
+                  "mode": 420
+                }
+              ]
+            }
+          }
+      with_items: 
+        - '{{ nodes }}'
+      when: item.config_type == 'ignition'
+
+
+
+- name: Spin up the servers
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  tasks:
+    - name: Build snapshots from base image for each node
+      shell: qemu-img create -f qcow2 -b {{ image_pool_loc }}/{{ image_name }} {{ image_pool_loc }}/{{ distro }}-{{ item.name }}.snap
+      args:
+        creates: "{{ image_pool_loc }}/{{ distro }}-{{ item.name }}.snap"
+      with_items: 
+        - '{{ nodes }}'
+    - name: Refresh the pool.
+      shell: virsh pool-refresh {{ image_pool_name }}
+    - name: Create the vms
+      shell: |
+        virsh list | grep " {{ item.name }} " > /dev/null 2>&1
+        if [ $? != 0 ]; then
+
+          virt-install -n {{ item.name }} --vcpus {{ item.vcpus }} -r {{ item.ram }} -w network={{ item.network }} --noautoconsole --disk vol=default/{{ distro }}-{{ item.name }}.snap,format=qcow2 --import \
+          {% if item.config_type == "ignition" -%}--qemu-commandline="-fw_cfg name=opt/com.coreos/config,file={{ item.ignition_file }}"{%- endif %}
+          {% if item.config_type == "configdrive" -%}--disk vol=default/configdrive-{{ item.name }}.iso,device=cdrom{%- endif %}
+
+        fi
+      with_items:
+        - '{{ nodes }}'
+
+    - name: Wait for the IP addresses to be assigned
+      shell: virsh domifaddr master | egrep '[0-9]*\.[0-9]*\.[0-9]*\.[0-9]*'  
+      register: waitforaddr
+      until: waitforaddr.rc == 0
+      retries: 60
+      delay: 5
+      ignore_errors: yes
+      with_items: 
+        - '{{ nodes }}'
+
+    - name: Create an ansible inventory file
+      shell: |
+        echo '[all]' > {{ inventory_file }}
+        {% for item in nodes %}
+        CURIP=$(virsh domifaddr {{ item.name }} | awk '/ipv4/{print $4}' | sed -e 's/\/24$//g')
+        echo "{{ item.name }} ansible_host=${CURIP} ansible_user=core ansible_ssh_private_key_file={{ key_file }}" >> {{ inventory_file }}
+        {% endfor %}

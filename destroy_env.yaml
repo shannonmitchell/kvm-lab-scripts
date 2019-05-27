@@ -1,0 +1,47 @@
+---
+
+- name: Delete ignition files
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  tasks:
+    - name: Remove the ssh key
+      shell: rm -f {{ key_file }}
+      args:
+        removes: '{{ key_file }}'
+    - name: Remove the ssh public key
+      shell: rm -f {{ key_file }}.pub
+      args:
+        removes: '{{ key_file }}.pub'
+    - name: Remove ignition files for nodes
+      shell: rm -f '{{ item.ignition_file }}'
+      with_items: 
+        - '{{ nodes }}'
+      when: item.config_type == 'ignition'
+    - name: Remove the inventory file
+      shell: rm -f {{ inventory_file }}
+      args:
+        removes: '{{ inventory_file }}'
+
+- name: Destroy the servers
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  tasks:
+    - name: Destroy the vms
+      shell: |
+        virsh list | grep " {{ item.name }} " > /dev/null 2>&1
+        if [ $? == 0 ]; then
+          virsh destroy {{ item.name }}
+          virsh undefine {{ item.name }}
+        fi
+      with_items:
+        - '{{ nodes }}'
+    - name: Delete snapshots of the base image for each node
+      shell: rm -f {{ image_pool_loc }}/{{ distro }}-{{ item.name }}.snap
+      args:
+        removes: "{{ image_pool_loc }}/{{ distro }}-{{ item.name }}.snap"
+      with_items: 
+        - '{{ nodes }}'
+    - name: Refresh the pool.
+      shell: virsh pool-refresh {{ image_pool_name }}
