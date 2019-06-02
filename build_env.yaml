@@ -116,7 +116,7 @@
 
           virt-install -n {{ item.name }} --vcpus {{ item.vcpus }} -r {{ item.ram }} -w network={{ item.network }} --noautoconsole --disk vol={{ image_pool_name }}/{{ distro }}-{{ item.name }}.snap,format=qcow2 --import \
           {% if item.config_type == "ignition" -%}--qemu-commandline="-fw_cfg name=opt/com.coreos/config,file={{ item.ignition_file }}"{%- endif %}
-          {% if item.config_type == "configdrive" -%}--disk vol={{ image_pool_name }}/configdrive-{{ item.name }}.iso,device=cdrom{%- endif %}
+          {% if item.config_type == "cloud-init" -%}--disk vol={{ image_pool_name }}/configdrive-{{ item.name }}.iso,device=cdrom{%- endif %}
 
         fi
       with_items:

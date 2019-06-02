@@ -1,0 +1,38 @@
+---
+
+env_name: cka-centos
+distro: "centos"
+image_name: "CentOS-7-x86_64-GenericCloud.qcow2"
+image_url: "https://cloud.centos.org/centos/7/images/{{ image_name }}"
+gunzip_image: false
+image_pool_loc: "/home/libvirt_images"
+image_pool_name: pool1
+base_image_disk_size: 10G
+key_file: "./keys/{{ env_name }}"
+inventory_file: "./inventory/{{ env_name }}.ini"
+nodes:
+  - name: master
+    config_type: cloud-init
+    ignition_file: "{{ image_pool_loc }}/{{ env_name }}-master.ign"
+    ram: 2048
+    vcpus: 2
+    network: default
+  - name: node01
+    config_type: cloud-init
+    ignition_file: "{{ image_pool_loc }}/{{ env_name }}-node01.ign"
+    ram: 1024
+    vcpus: 1
+    network: default
+  - name: node02
+    config_type: cloud-init
+    ignition_file: "{{ image_pool_loc }}/{{ env_name }}-node02.ign"
+    ram: 1024
+    vcpus: 1
+    network: default
+  - name: node03
+    config_type: cloud-init
+    ignition_file: "{{ image_pool_loc }}/{{ env_name }}-node03.ign"
+    ram: 1024
+    vcpus: 1
+    network: default
+
