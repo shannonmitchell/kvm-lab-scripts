@@ -9,16 +9,16 @@
         path: '{{ image_pool_loc }}/{{ image_name }}.gz'
       register: gzip_stat_result
       when: gunzip_image
+    - name: Check if the file exists first.
+      stat:
+        path: '{{ image_pool_loc }}/{{ image_name }}'
+      register: stat_result
     - name: Download the base gzipped image
       get_url:
         url: '{{ image_url }}'
         dest: '{{ image_pool_loc }}/'
         timeout: 3600
-      when: gunzip_image and gzip_stat_result.stat.exists == False
-    - name: Check if the file exists first.
-      stat:
-        path: '{{ image_pool_loc }}/{{ image_name }}'
-      register: stat_result
+      when: gunzip_image and gzip_stat_result.stat.exists == False and stat_result.stat.exists == False
     - name: Gunzip the base image
       shell: gunzip  '{{ image_pool_loc }}/{{ image_name }}.gz'
       args:
@@ -33,9 +33,13 @@
     - name: Get the disk image size
       shell: qemu-img info /var/lib/libvirt/images/fedora-coreos-30.84-qemu.qcow2 | awk '/virtual size/{print $3}'
       register: qemu_img_info_result
+    - name: Get the current image size
+      shell: qemu-img info /home/libvirt_images/fedora-coreos-30.249-qemu.qcow2 | awk '/^virtual size/{print $3}'
+      register: get_image_size
     - name: Resize the base image
       shell: qemu-img resize {{ image_pool_loc }}/{{ image_name }} {{ base_image_disk_size }}
       when: base_image_disk_size != qemu_img_info_result.stdout
+      when: get_image_size.stdout != base_image_disk_size
 
 - name: Generate ignition files
   hosts: localhost
@@ -82,6 +86,10 @@
               ]
             }
           }
+        owner: qemu
+        group: qemu
+        selevel: s0
+        setype: virt_content_t
       with_items: 
         - '{{ nodes }}'
       when: item.config_type == 'ignition'
@@ -106,9 +114,9 @@
         virsh list | grep " {{ item.name }} " > /dev/null 2>&1
         if [ $? != 0 ]; then
 
-          virt-install -n {{ item.name }} --vcpus {{ item.vcpus }} -r {{ item.ram }} -w network={{ item.network }} --noautoconsole --disk vol=default/{{ distro }}-{{ item.name }}.snap,format=qcow2 --import \
+          virt-install -n {{ item.name }} --vcpus {{ item.vcpus }} -r {{ item.ram }} -w network={{ item.network }} --noautoconsole --disk vol={{ image_pool_name }}/{{ distro }}-{{ item.name }}.snap,format=qcow2 --import \
           {% if item.config_type == "ignition" -%}--qemu-commandline="-fw_cfg name=opt/com.coreos/config,file={{ item.ignition_file }}"{%- endif %}
-          {% if item.config_type == "configdrive" -%}--disk vol=default/configdrive-{{ item.name }}.iso,device=cdrom{%- endif %}
+          {% if item.config_type == "configdrive" -%}--disk vol={{ image_pool_name }}/configdrive-{{ item.name }}.iso,device=cdrom{%- endif %}
 
         fi
       with_items:

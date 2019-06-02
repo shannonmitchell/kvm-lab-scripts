@@ -6,7 +6,7 @@ image_name: "fedora-coreos-30.249-qemu.qcow2"
 image_url: "https://ci.centos.org/artifacts/fedora-coreos/prod/builds/latest/{{ image_name }}.gz"
 gunzip_image: true
 image_pool_loc: "/home/libvirt_images"
-image_pool_name: default
+image_pool_name: pool1
 base_image_disk_size: 10G
 key_file: "./keys/{{ env_name }}"
 inventory_file: "./inventory/{{ env_name }}.ini"
