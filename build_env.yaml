@@ -41,7 +41,8 @@
       when: base_image_disk_size != qemu_img_info_result.stdout
       when: get_image_size.stdout != base_image_disk_size
 
-- name: Generate ignition files
+
+- name: Generate ssh key for access
   hosts: localhost
   gather_facts: false
   connection: local
@@ -53,6 +54,12 @@
     - name: Register the pub key contents for use
       shell: cat '{{ key_file }}'.pub
       register: ssh_pub_key
+
+- name: Generate ignition files
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  tasks:
     - name: Build ignition files for nodes
       copy:
         dest: '{{ item.ignition_file }}'
@@ -62,7 +69,7 @@
             "passwd": {
               "users": [
                 {
-                  "name": "core",
+                  "name": "{{ item.login_user }}",
                   "sshAuthorizedKeys": [
                     "{{ ssh_pub_key.stdout }}"
                   ]
@@ -94,6 +101,42 @@
         - '{{ nodes }}'
       when: item.config_type == 'ignition'
 
+- name: Generate cloud-init iso
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  tasks:
+    - name: Build configdrive iso images for cloud-init
+      shell: |
+        cat <<EOF > ./user-data
+        #cloud-config
+        
+        groups:
+          - {{ item.login_user }}
+        
+        users:
+          - name: {{ item.login_user }}
+            gecos: Cloud-Init User {{ item.login_user }}
+            primary_group: {{ item.login_user }}
+            groups: wheel
+            sudo: ALL=(ALL) NOPASSWD:ALL
+            lock_password: true
+            ssh_authorized_keys:
+              - "{{ ssh_pub_key.stdout }}"
+        EOF
+
+        cat <<EOF > ./meta-data
+        instance-id: {{ item.name }}
+        local-hostname: {{ item.name }}
+        EOF
+
+        genisoimage -volid cidata -input-charset utf-8 -joliet -rock -output {{ image_pool_loc }}/{{ item.configdrive_iso }} user-data meta-data
+        rm -f user-data
+        rm -f meta-data
+
+      with_items: 
+        - '{{ nodes }}'
+      when: item.config_type == 'cloud-init'
 
 
 - name: Spin up the servers
@@ -109,18 +152,27 @@
         - '{{ nodes }}'
     - name: Refresh the pool.
       shell: virsh pool-refresh {{ image_pool_name }}
-    - name: Create the vms
+    - name: Create the vms(ignition)
       shell: |
         virsh list | grep " {{ item.name }} " > /dev/null 2>&1
         if [ $? != 0 ]; then
-
           virt-install -n {{ item.name }} --vcpus {{ item.vcpus }} -r {{ item.ram }} -w network={{ item.network }} --noautoconsole --disk vol={{ image_pool_name }}/{{ distro }}-{{ item.name }}.snap,format=qcow2 --import \
-          {% if item.config_type == "ignition" -%}--qemu-commandline="-fw_cfg name=opt/com.coreos/config,file={{ item.ignition_file }}"{%- endif %}
-          {% if item.config_type == "cloud-init" -%}--disk vol={{ image_pool_name }}/configdrive-{{ item.name }}.iso,device=cdrom{%- endif %}
-
+          --qemu-commandline="-fw_cfg name=opt/com.coreos/config,file={{ item.ignition_file }}"
         fi
       with_items:
         - '{{ nodes }}'
+      when: item.config_type == 'ignition'
+
+    - name: Create the vms(cloud-init)
+      shell: |
+        virsh list | grep " {{ item.name }} " > /dev/null 2>&1
+        if [ $? != 0 ]; then
+          virt-install -n {{ item.name }} --vcpus {{ item.vcpus }} -r {{ item.ram }} -w network={{ item.network }} --noautoconsole --disk vol={{ image_pool_name }}/{{ distro }}-{{ item.name }}.snap,format=qcow2 --import \
+          --disk vol={{ image_pool_name }}/{{ item.configdrive_iso }}
+        fi
+      with_items:
+        - '{{ nodes }}'
+      when: item.config_type == 'cloud-init'
 
     - name: Wait for the IP addresses to be assigned
       shell: virsh domifaddr master | egrep '[0-9]*\.[0-9]*\.[0-9]*\.[0-9]*'  
@@ -137,5 +189,5 @@
         echo '[all]' > {{ inventory_file }}
         {% for item in nodes %}
         CURIP=$(virsh domifaddr {{ item.name }} | awk '/ipv4/{print $4}' | sed -e 's/\/24$//g')
-        echo "{{ item.name }} ansible_host=${CURIP} ansible_user=core ansible_ssh_private_key_file={{ key_file }}" >> {{ inventory_file }}
+        echo "{{ item.name }} ansible_host=${CURIP} ansible_user={{ item.login_user }} ansible_ssh_private_key_file={{ key_file }}" >> {{ inventory_file }}
         {% endfor %}

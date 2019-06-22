@@ -17,22 +17,26 @@ nodes:
     ram: 2048
     vcpus: 2
     network: default
+    login_user: core
   - name: node01
     config_type: ignition
     ignition_file: "{{ image_pool_loc }}/{{ env_name }}-node01.ign"
     ram: 1024
     vcpus: 1
     network: default
+    login_user: core
   - name: node02
     config_type: ignition
     ignition_file: "{{ image_pool_loc }}/{{ env_name }}-node02.ign"
     ram: 1024
     vcpus: 1
     network: default
+    login_user: core
   - name: node03
     config_type: ignition
     ignition_file: "{{ image_pool_loc }}/{{ env_name }}-node03.ign"
     ram: 1024
     vcpus: 1
     network: default
+    login_user: core
 

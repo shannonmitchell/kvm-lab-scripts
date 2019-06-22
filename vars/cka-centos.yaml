@@ -13,26 +13,30 @@ inventory_file: "./inventory/{{ env_name }}.ini"
 nodes:
   - name: master
     config_type: cloud-init
-    ignition_file: "{{ image_pool_loc }}/{{ env_name }}-master.ign"
+    configdrive_iso: "configdrive-{{ env_name }}-master.iso"
     ram: 2048
     vcpus: 2
     network: default
+    login_user: centos
   - name: node01
     config_type: cloud-init
-    ignition_file: "{{ image_pool_loc }}/{{ env_name }}-node01.ign"
+    configdrive_iso: "configdrive-{{ env_name }}-node01.iso"
     ram: 1024
     vcpus: 1
     network: default
+    login_user: centos
   - name: node02
     config_type: cloud-init
-    ignition_file: "{{ image_pool_loc }}/{{ env_name }}-node02.ign"
+    configdrive_iso: "configdrive-{{ env_name }}-node02.iso"
     ram: 1024
     vcpus: 1
     network: default
+    login_user: centos
   - name: node03
     config_type: cloud-init
-    ignition_file: "{{ image_pool_loc }}/{{ env_name }}-node03.ign"
+    configdrive_iso: "configdrive-{{ env_name }}-node03.iso"
     ram: 1024
     vcpus: 1
     network: default
+    login_user: centos
 
