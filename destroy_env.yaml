@@ -1,28 +1,5 @@
 ---
 
-- name: Delete ignition files
-  hosts: localhost
-  gather_facts: false
-  connection: local
-  tasks:
-    - name: Remove the ssh key
-      shell: rm -f {{ key_file }}
-      args:
-        removes: '{{ key_file }}'
-    - name: Remove the ssh public key
-      shell: rm -f {{ key_file }}.pub
-      args:
-        removes: '{{ key_file }}.pub'
-    - name: Remove ignition files for nodes
-      shell: rm -f '{{ item.ignition_file }}'
-      with_items: 
-        - '{{ nodes }}'
-      when: item.config_type == 'ignition'
-    - name: Remove the inventory file
-      shell: rm -f {{ inventory_file }}
-      args:
-        removes: '{{ inventory_file }}'
-
 - name: Destroy the servers
   hosts: localhost
   gather_facts: false
@@ -45,3 +22,34 @@
         - '{{ nodes }}'
     - name: Refresh the pool.
       shell: virsh pool-refresh {{ image_pool_name }}
+
+- name: Delete ssh, inventory, ignition and cloud-init files
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  tasks:
+    - name: Remove the ssh key
+      shell: rm -f {{ key_file }}
+      args:
+        removes: '{{ key_file }}'
+    - name: Remove the ssh public key
+      shell: rm -f {{ key_file }}.pub
+      args:
+        removes: '{{ key_file }}.pub'
+    - name: Remove ignition files for nodes
+      shell: rm -f '{{ item.ignition_file }}'
+      with_items: 
+        - '{{ nodes }}'
+      when: item.config_type == 'ignition'
+    - name: Remove configdrive files for nodes
+      shell: rm -f '{{ image_pool_loc }}/{{ item.configdrive_iso }}'
+      with_items: 
+        - '{{ nodes }}'
+      when: item.config_type == 'cloud-init'
+    - name: Refresh the pool.
+      shell: virsh pool-refresh {{ image_pool_name }}
+    - name: Remove the inventory file
+      shell: rm -f {{ inventory_file }}
+      args:
+        removes: '{{ inventory_file }}'
+
